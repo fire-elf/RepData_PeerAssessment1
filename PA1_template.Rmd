@@ -1,25 +1,261 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "Reproducible Research Peer Assessment 1"
+author: "Jennifer Holtzman"
+date: "January 8, 2017"
+output: html_document
 ---
 
+```{r preprocessing}
+knitr::opts_chunk$set(echo = TRUE)
+```
 
 ## Loading and preprocessing the data
+- Set the local working directory.
+- Load data into a data frame.
+- Convert date to a date format from factor.
+
+```{r processing}
+setwd("C:/Users/Jenny/Documents/COURSERA/5 - Reproducible Research/Week 2")
+df <- read.csv("activity.csv")
+df$date <- as.POSIXct(df$date, format="%Y-%m-%d")
+
+```
+
+## What is the mean total number of steps taken per day?
+
+For this part of the assignment, you can ignore the missing values in the dataset.
+
+1. Make a histogram of the total number of steps taken each day
 
 
+```{r total-steps}
+df1 <- na.omit(df)
+library(ggplot2)
 
-## What is mean total number of steps taken per day?
+# Calculate the total steps for each DATE, assign to a list; no NAs
+date_total <- tapply(df1$steps, df1$date, sum)
+
+# Histogram of total steps per day; the barplot function will do this
+# as histogram shows frequency of total steps, which is not what was asked.
+par(mar=c(7,7,7,2)+0.1)
+barplot(date_total, las = 2, col = "purple", xlim = c(0, 60), main = "Total steps per day", cex.axis = 0.5, cex.names = 0.5)
+mtext("Total Steps", side=2, line=4)
+
+png(file = "plot1.png")
+par(mar=c(7,7,7,2)+0.1)
+barplot(date_total, las = 2, col = "purple", xlim = c(0, 60), main = "Total steps per day", cex.axis = 0.5, cex.names = 0.5)
+mtext("Total Steps", side=2, line=4)
+dev.off()
+
+```
 
 
+2. Calculate and report the mean and median total number of steps taken per day
 
+```{r mean-median, results="asis"}
+
+# Calculate the mean / median steps for each DATE, assign to a list; no NAs
+date_mean <- tapply(df1$steps, df1$date, mean)
+date_med <- tapply(df1$steps, df1$date, median)
+
+# This package needed for changing row names to a new column by reference (setDT, see below)
+library(data.table)
+# Combine mean and median into a dataframe, print
+# Change date to appropriate format
+# Rename the columns
+steps_stats <- do.call(rbind, mapply(data.frame, mean.steps=date_mean, median.steps=date_med, SIMPLIFY = FALSE))
+setDT(steps_stats, keep.rownames = TRUE)
+colnames(steps_stats)<- c("date", "mean.steps", "median.steps")
+steps_stats$date <- as.POSIXct(steps_stats$date, format="%Y-%m-%d")
+
+# Present a table of the mean and median steps per date
+library(xtable)
+xt <- xtable(steps_stats)
+print(xt, type = "html")
+
+```
 ## What is the average daily activity pattern?
 
+1. Make a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
 
+2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+
+```{r intervals}
+int_mean <- tapply(df1$steps, df1$interval, mean)
+int_names <-row.names(int_mean)
+int_names <- as.numeric(as.character(int_names))
+int_df <- data.frame(int_names, int_mean)
+plot(int_df$int_names, int_df$int_mean, type = "l", xlab = "Interval (min)", ylab = "Mean steps")
+
+step_max <- max(int_df$int_mean)
+row_max <- which(grepl(step_max, int_df$int_mean))
+int_max <- int_df$int_names[row_max]
+
+png(file = "plot2.png")
+plot2 <- plot(int_df$int_names, int_df$int_mean, type = "l", xlab = "Interval (min)", ylab = "Mean steps")
+dev.off()
+```
+
+Answer: The maximum number of steps, `r step_max`, occurs at interval beginning at `r int_max` minutes.
 
 ## Imputing missing values
+
+Note that there are a number of days/intervals where there are missing values (coded as NA). The presence of missing days may introduce bias into some calculations or summaries of the data.
+
+1. Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+
+```{r missing}
+
+# Count the NAs 
+NA_count <- sum(is.na(df$steps))
+
+```
+Answer: The number of missing values is `r NA_count`.
+
+
+2. Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+
+3. Create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+```{r impute-NAs}
+
+# This package needed for changing row names to a new column by reference (setDT, see below)
+library(data.table)
+
+# Calculate the mean steps for each INTERVAL, assign to a list; no NAs
+interval_mean <- tapply(df1$steps, df1$interval, mean)
+
+# Convert the list of interval-means to a data frame, with the intervals as a separate column
+# Rename the columns
+interval_df <- data.frame(interval_mean)
+setDT(interval_df, keep.rownames = TRUE)
+colnames(interval_df)<- c("interval", "mean.steps")
+
+# Copy original df to a new variable, contains all NAs
+df2 <- df
+
+# Loop to replace NAs with imputed values in the copied dataset, df2.
+# There are 17546 entries. Intervals are numbered 1 to 288 and repeat 61 times (288*61=17546).
+# If na is found at (line_count)th step, replace NA with the mean for that time interval
+line_count <- 0
+for(j in 1:61){
+  for(k in 1:288){
+    line_count <- line_count + 1
+    this_int <- interval_df$interval[[k]]
+      if(is.na(df2$steps[line_count])){
+        df2$steps[line_count] <- interval_df$mean.steps[which(interval_df$interval == this_int)]
+      }
+  }
+}
+
+```
+
+4a. Make a histogram of the total number of steps taken each day [using the data set using imputed NAs].
+
+```{r histogram-data-impute}
+
+# Calculate the total / median / mean steps for each DATE, assign to a list; use df2 containing imputed NAs
+date_total2 <- tapply(df2$steps, df2$date, sum)
+date_mean2 <- tapply(df2$steps, df2$date, mean)
+date_med2 <- tapply(df2$steps, df2$date, median)
+
+# Histogram of total steps per day; the barplot function will do this
+# as histogram shows frequency of total steps, which is not what was asked.
+par(mar=c(7,7,7,2)+0.1)
+barplot(date_total2, las = 2, col = "purple", xlim = c(0, 70), main = "Total steps per day - with imputed NAs", cex.axis = 0.5, cex.names = 0.5)
+mtext("Total Steps", side=2, line=4)
+
+# Print to png device
+png(file="plot3.png",width=600,height=350,res=45)
+par(mar=c(7,7,7,2)+0.1)
+barplot(date_total2, las = 2, col = "purple", xlim = c(0, 70), main = "Total steps per day - with imputed NAs", cex.axis = 0.5, cex.names = 0.5)
+mtext("Total Steps", side=2, line=4)
+dev.off()
+
+```
+
+
+4b. Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+```{r table-data-impute, results="asis"}
+
+# Combine mean and median into a dataframe
+# Change date to appropriate format
+# Rename the columns
+steps_stats2 <- do.call(rbind, mapply(data.frame, mean.steps=date_mean2, median.steps=date_med2, SIMPLIFY = FALSE))
+setDT(steps_stats2, keep.rownames = TRUE)
+colnames(steps_stats2)<- c("date", "mean.steps", "median.steps")
+steps_stats2$date <- as.POSIXct(steps_stats2$date, format="%Y-%m-%d")
+
+# Present a table of the mean and median steps per date
+library(xtable)
+xt2 <- xtable(steps_stats2)
+print(xt2, type = "html")
+
+# Present tables summarizing the data with and without imputed NA values
+xt3 <- xtable(summary(steps_stats), caption = "No imputed NAs")
+print(xt3, type = "html", include.rownames = FALSE, include.colnames = FALSE)
+
+xt4 <- xtable(summary(steps_stats2), caption = "With imputed NAs")
+print(xt4, type = "html", include.rownames = FALSE, include.colnames = FALSE)
+
+# Calculate overall sum of steps without and with imputed NA values
+total1 <- sum(date_total)
+total2 <- sum(date_total2)
+
+```
+
+Answer: Differences between data not containing and containing imputed NA values include (1) imputing filled in data for days that were missing; (2) maximum and minimum values are the same for both; (3) global mean is the same for both; and (4) global median is slightly higher with imputed NAs (37.3826) vs without (37.3785). 
+
+The global total steps without imputed NA values is `r total1`, and it is `r total2` with imputed NAs. From this and from inspection of the graph of total steps, imputing missing data increased the estimated total daily number of steps.
 
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+1. Create a new factor variable in the dataset with two levels -- "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
+
+2. Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis).
+
+
+```{r weekday-weekend, echo=FALSE}
+
+# Use the imputed data df2 for this part
+# Create a vector (logical, then convert to factor) to see if each date is a weekday (TRUE) or weekend (FALSE)
+# Add that vector as a column to the data frame
+library(timeDate)
+week_bool <- isWeekday(df2$date, wday=1:5)
+week_bool <- as.factor(week_bool)
+df3 <- df2
+df3$weekday <- week_bool
+levels(df3$weekday) <- c("weekend","weekday")
+
+# Calculate the average number of steps at each INTERVAL
+# Convert matrix to dataframe, keep row names as a separate column = interval
+week_mean <- tapply(df3$steps, list(df3$interval, df3$weekday), mean)
+week_mean <- as.data.frame(week_mean)
+setDT(week_mean, keep.rownames = TRUE)
+colnames(week_mean)<- c("interval", "weekend", "weekday")
+
+# Reshape the data with 3 cols: interval, steps, day (factor)
+df4 <- cbind(week_mean$interval, week_mean$weekday, rep("weekday", 288))
+df5 <- cbind(week_mean$interval, week_mean$weekend, rep("weekend", 288))
+df6 <- rbind(df4, df5)
+df6 <- as.data.frame(df6)
+colnames(df6)<- c("interval", "steps", "day")
+df6$interval <- as.integer(as.character(df6$interval))
+df6$steps <- as.numeric(as.character(df6$steps))
+
+# Plot the data with 2 panels using lattice
+library(lattice)
+plot4 <- xyplot(df6$steps ~ df6$interval|df6$day, type = "l", layout = c(1,2), xlab = "Interval", ylab = "Number of steps")
+print(plot4)
+
+# Print to png device
+png(file = "plot4.png")
+plot4 <- xyplot(df6$steps ~ df6$interval|df6$day, type = "l", layout = c(1,2), xlab = "Interval", ylab = "Number of steps")
+print(plot4)
+dev.off()
+
+```
+It appears as though activity begins later in the day on weekends compared to weekends.
